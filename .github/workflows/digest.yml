@@ -1,0 +1,63 @@
+name: Daily News Digest
+
+on:
+  schedule:
+    # 10:50 UTC = 07:50 in Buenos Aires (UTC-3, no DST).
+    # Deliberately 10 minutes early: GitHub's scheduler runs late under load.
+    - cron: "50 10 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the digest instead of emailing it"
+        type: boolean
+        default: false
+
+concurrency:
+  group: daily-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Build and send digest
+        env:
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'gemini' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          SMTP_HOST: ${{ vars.SMTP_HOST || 'smtp.gmail.com' }}
+          SMTP_PORT: ${{ vars.SMTP_PORT || '465' }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          TWEETS_ENABLED: ${{ vars.TWEETS_ENABLED || '1' }}
+          TWEET_LANE: ${{ vars.TWEET_LANE }}
+          TIMEZONE: America/Argentina/Buenos_Aires
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: python run.py
+
+      - name: Persist seen-URL state
+        if: ${{ !inputs.dry_run }}
+        run: |
+          if [[ -z "$(git status --porcelain state/seen.json)" ]]; then
+            echo "state unchanged, nothing to commit"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/seen.json
+          git commit -m "chore: update seen state [skip ci]"
+          git push

@@ -1,0 +1,6 @@
+# El workflow corre en ubuntu-latest y digest.yml tiene un bloque `run: |` de
+# bash. Si git te commitea CRLF desde Windows, ese script falla en Actions con
+# errores de '\r' dificiles de leer. Esto fuerza LF en el repo pase lo que pase
+# con tu core.autocrlf.
+* text=auto eol=lf
+*.ps1 text eol=crlf

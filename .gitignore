@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+
+# Scripts descartables para diagnosticar feeds rotos. Quedan en disco porque
+# sirven la proxima vez que un medio mueva su RSS, pero no van al repo.
+probe_feeds.py
+probe_nacional.py
