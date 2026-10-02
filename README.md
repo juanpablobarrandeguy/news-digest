@@ -43,10 +43,12 @@ Resend → API Keys → Create API Key: permission **Sending access**, domain
 Grab a free key at <https://aistudio.google.com/apikey>. No credit card required.
 
 No model ID to maintain: with `LLM_MODEL` unset, each run asks the API for the
-newest stable `gemini-X.Y-flash` and uses that. If you pin `LLM_MODEL` and Google
-retires it, the run switches to the current one and the email footer says so.
-A run makes a handful of requests (editor, 2–3 summary batches, trending), well
-within the free tier; rate limits (429) are retried with backoff.
+two newest stable `gemini-X.Y-flash` models plus the newest Flash-Lite, and uses
+them in that order. The newest Flash is often overloaded on the free tier (HTTP
+503); after two retries the run moves to the next model and stays there, and the
+email footer says which one was used. A pinned `LLM_MODEL` goes first in that
+list. A run makes a handful of requests (editor, 2–3 summary batches, trending),
+well within the free tier.
 
 ### 4. Repository secrets
 

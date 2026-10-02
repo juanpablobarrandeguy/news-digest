@@ -32,7 +32,11 @@ _SYSTEM = (
     "- Never pick two stories about the same event; keep the most informative one.\n"
     "- Only use ids listed under that section.\n"
     "- The reader wants the full count per section: if fewer stories match his "
-    "interests, fill the rest with the most newsworthy remaining ones of that section.\n\n"
+    "interests, fill the rest with the most newsworthy remaining ones of that section.\n"
+    "- Exception, section \"caba\": pick only stories that are really about the City "
+    "of Buenos Aires (city government, transport, services, neighborhoods, city life). "
+    "A national story that merely mentions a porteño court or a former city official "
+    "does not count. Returning fewer than requested here is correct.\n\n"
     "Respond with ONLY a JSON object mapping each section key to a list of ids, "
     'for example {"ai": [3, 0, 7], "tech": [12, 15]}. No prose, no markdown fences.'
 )
@@ -101,8 +105,10 @@ def pick(buckets: dict[str, list[Article]], llm_call) -> dict[str, list[Article]
                 chosen.append(article)
             if len(chosen) == limit:
                 break
-        # Short answer for a section: top up from the ranking, in order.
-        for article in pool:
+        # Short answer for a section: top up from the ranking, in order. Not for
+        # CABA: its pool comes from a keyword filter, and topping up would bring
+        # back exactly the false positives the editor just discarded.
+        for article in ([] if key == "caba" else pool):
             if len(chosen) >= limit:
                 break
             if article not in chosen:

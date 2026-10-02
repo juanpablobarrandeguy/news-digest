@@ -21,7 +21,9 @@ FEEDS = [
     {"name": "The Decoder", "url": "https://the-decoder.com/feed/", "category": "ai", "weight": 1.0},
     {"name": "Simon Willison", "url": "https://simonwillison.net/atom/everything/", "category": "ai", "weight": 0.9},
     {"name": "Hugging Face", "url": "https://huggingface.co/blog/feed.xml", "category": "ai", "weight": 0.9},
-    {"name": "Import AI", "url": "https://importai.substack.com/feed", "category": "ai", "weight": 1.1},
+    # 2026-10-02: Import AI sacado — desde GitHub Actions devuelve XML invalido
+    # (2:1326, invalid token) todos los dias.
+    #   {"name": "Import AI", "url": "https://importai.substack.com/feed", ...}
     # 2026-08-02: VentureBeat AI sacado — https://venturebeat.com/category/ai/feed/
     # parseaba bien pero llevaba 75 dias sin publicar. La raiz (venturebeat.com/feed/)
     # esta viva pero trae solo 7 items y casi nada de AI.
@@ -59,8 +61,7 @@ FEEDS = [
     {"name": "La Nación Sociedad", "url": "https://www.lanacion.com.ar/arc/outboundfeeds/rss/category/sociedad/?outputType=xml", "category": "nacional", "weight": 0.9},
 
     # --- World ------------------------------------------------------------
-    # 2026-10-02: foco en EE.UU., Ucrania/Rusia e Israel/Medio Oriente. Al
-    # Jazeera y Times of Israel cubren Medio Oriente desde lados distintos.
+    # 2026-10-02: foco en EE.UU., Ucrania/Rusia e Israel/Medio Oriente.
     {"name": "BBC World", "url": "https://feeds.bbci.co.uk/news/world/rss.xml", "category": "world", "weight": 1.2},
     {"name": "Al Jazeera", "url": "https://www.aljazeera.com/xml/rss/all.xml", "category": "world", "weight": 1.0},
     {"name": "NPR World", "url": "https://feeds.npr.org/1004/rss.xml", "category": "world", "weight": 1.0},
@@ -68,7 +69,9 @@ FEEDS = [
     {"name": "NYT Politics", "url": "https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml", "category": "world", "weight": 1.0},
     {"name": "Guardian World", "url": "https://www.theguardian.com/world/rss", "category": "world", "weight": 1.1},
     {"name": "Guardian US", "url": "https://www.theguardian.com/us-news/rss", "category": "world", "weight": 1.0},
-    {"name": "Times of Israel", "url": "https://www.timesofisrael.com/feed/", "category": "world", "weight": 0.9},
+    # 2026-10-02: Times of Israel sacado — desde GitHub Actions devuelve HTML en
+    # lugar del feed (10:43, mismatched tag).
+    #   {"name": "Times of Israel", "url": "https://www.timesofisrael.com/feed/", ...}
 ]
 
 # --------------------------------------------------------------------------
@@ -170,7 +173,7 @@ LLM_MODEL = os.getenv("LLM_MODEL", "")  # blank = provider default
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_BATCH_SIZE = int(os.getenv("LLM_BATCH_SIZE", "12"))
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "90"))
-LLM_RETRIES = int(os.getenv("LLM_RETRIES", "3"))  # on 429 / 5xx, with backoff
+LLM_RETRIES = int(os.getenv("LLM_RETRIES", "2"))  # per model, on 429 / 5xx, with backoff
 
 # Gemini: blank = ask the API for the newest stable "gemini-X.Y-flash" on each
 # run. Google retires model IDs every few months; a hardcoded default rots.

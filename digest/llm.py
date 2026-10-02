@@ -17,14 +17,20 @@ log = logging.getLogger(__name__)
 
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 GEMINI_FALLBACK_MODEL = "gemini-flash-latest"  # Google's own alias, used if listing fails
+GEMINI_MAX_MODELS = 3  # how many models to try before giving up for the run
 _RETRY_STATUS = {429, 500, 502, 503, 504}
 _STABLE_FLASH_RE = re.compile(r"^models/gemini-(\d+(?:\.\d+)*)-flash$")
+_STABLE_LITE_RE = re.compile(r"^models/gemini-(\d+(?:\.\d+)*)-flash-lite$")
 
-_gemini_model: str | None = None  # resolved once per run
+# Resolved once per run: candidate models, best first, and which one is in use.
+# The newest Flash is often overloaded on the free tier (HTTP 503); when that
+# happens the run moves to the next candidate and stays there.
+_gemini_models: list[str] | None = None
+_gemini_idx = 0
 
 
 class LLMUnavailable(RuntimeError):
-    """No provider configured, or no usable key."""
+    """No provider configured, no usable key, or every model failed this run."""
 
 
 def _post(url: str, **kwargs) -> requests.Response:
@@ -60,9 +66,10 @@ def _version_key(version: str) -> tuple[int, ...]:
     return tuple(int(p) for p in version.split("."))
 
 
-def _discover_gemini_model() -> str:
-    """Newest stable 'gemini-X.Y-flash' this key can call. Previews, lite and
-    dated variants are skipped on purpose: they come and go faster."""
+def _discover_gemini_models() -> list[str]:
+    """The two newest stable 'gemini-X.Y-flash' models this key can call, then the
+    newest stable flash-lite (separate capacity, usually free when Flash is busy). Previews and dated variants are
+    skipped on purpose: they come and go faster."""
     try:
         resp = requests.get(
             f"{GEMINI_BASE}/models",
@@ -71,52 +78,80 @@ def _discover_gemini_model() -> str:
             timeout=30,
         )
         resp.raise_for_status()
-        best: tuple[tuple[int, ...], str] | None = None
+        flash: list[tuple[tuple[int, ...], str]] = []
+        lite: list[tuple[tuple[int, ...], str]] = []
         for model in resp.json().get("models", []):
-            match = _STABLE_FLASH_RE.match(model.get("name", ""))
-            if not match or "generateContent" not in model.get("supportedGenerationMethods", []):
+            name = model.get("name", "")
+            if "generateContent" not in model.get("supportedGenerationMethods", []):
                 continue
-            key = _version_key(match.group(1))
-            if best is None or key > best[0]:
-                best = (key, model["name"].removeprefix("models/"))
-        if best:
-            return best[1]
+            for regex, bucket in ((_STABLE_FLASH_RE, flash), (_STABLE_LITE_RE, lite)):
+                match = regex.match(name)
+                if match:
+                    bucket.append((_version_key(match.group(1)), name.removeprefix("models/")))
+        flash.sort(reverse=True)
+        lite.sort(reverse=True)
+        found = [n for _, n in flash[:2]] + [n for _, n in lite[:1]]
+        if found:
+            return found
         log.warning("llm: no stable gemini-*-flash in the model list")
     except Exception as exc:  # noqa: BLE001
         log.warning("llm: could not list Gemini models (%s)", exc)
-    return GEMINI_FALLBACK_MODEL
+    return [GEMINI_FALLBACK_MODEL]
+
+
+def _gemini_candidates() -> list[str]:
+    global _gemini_models
+    if _gemini_models is None:
+        found = _discover_gemini_models()
+        models = ([config.LLM_MODEL] if config.LLM_MODEL else []) + [m for m in found if m != config.LLM_MODEL]
+        _gemini_models = models[:GEMINI_MAX_MODELS]
+        log.info("llm: Gemini candidates %s", ", ".join(_gemini_models))
+    return _gemini_models
 
 
 def _gemini_model_name() -> str:
-    global _gemini_model
-    if _gemini_model is None:
-        _gemini_model = config.LLM_MODEL or _discover_gemini_model()
-        log.info("llm: using Gemini model %s", _gemini_model)
-    return _gemini_model
+    models = _gemini_candidates()
+    return models[min(_gemini_idx, len(models) - 1)]
 
 
 def _call_gemini(system: str, user: str) -> str:
-    global _gemini_model
+    global _gemini_idx
     payload = {
         "system_instruction": {"parts": [{"text": system}]},
         "contents": [{"role": "user", "parts": [{"text": user}]}],
         "generationConfig": {"temperature": 0.3, "responseMimeType": "application/json"},
     }
     headers = {"x-goog-api-key": config.LLM_API_KEY, "Content-Type": "application/json"}
+    models = _gemini_candidates()
 
-    model = _gemini_model_name()
-    resp = _post(f"{GEMINI_BASE}/models/{model}:generateContent", headers=headers, json=payload)
-    if resp.status_code == 404:
-        # The configured or cached model was retired. Find the current one once.
-        replacement = _discover_gemini_model()
-        if replacement != model:
-            health.warn(f"El modelo {model} ya no existe; se usó {replacement}. "
-                        "Actualizá o borrá la variable LLM_MODEL.")
-            _gemini_model = model = replacement
+    while _gemini_idx < len(models):
+        model = models[_gemini_idx]
+        problem = ""
+        try:
             resp = _post(f"{GEMINI_BASE}/models/{model}:generateContent", headers=headers, json=payload)
-    resp.raise_for_status()
-    parts = resp.json()["candidates"][0]["content"]["parts"]
-    return "".join(p.get("text", "") for p in parts)
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            problem = type(exc).__name__
+        else:
+            if resp.status_code == 404:
+                problem = "ya no existe"
+                if model == config.LLM_MODEL:
+                    health.warn(f"El modelo {model} ya no existe: borrá o actualizá la variable LLM_MODEL.")
+            elif resp.status_code in _RETRY_STATUS:
+                problem = f"HTTP {resp.status_code}"
+            else:
+                resp.raise_for_status()
+                parts = resp.json()["candidates"][0]["content"]["parts"]
+                return "".join(p.get("text", "") for p in parts)
+
+        _gemini_idx += 1
+        if _gemini_idx < len(models):
+            log.warning("llm: %s failed (%s), switching to %s", model, problem, models[_gemini_idx])
+            health.warn(f"Gemini {model} no respondió ({problem}); se usó {models[_gemini_idx]}.")
+        else:
+            health.warn(f"Ningún modelo de Gemini respondió ({', '.join(models)}); "
+                        "el mail salió sin selección ni resúmenes con IA.")
+
+    raise LLMUnavailable("every Gemini candidate failed this run")
 
 
 def _call_groq(system: str, user: str) -> str:

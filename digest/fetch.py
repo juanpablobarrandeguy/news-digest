@@ -151,6 +151,8 @@ def fetch_feed(feed: dict) -> list[Article]:
         snippet = clean_text(
             getattr(entry, "summary", "") or getattr(entry, "description", "")
         )
+        if snippet.startswith("Article URL:"):
+            snippet = ""  # Hacker News: only links and counters, no content
 
         articles.append(
             Article(
