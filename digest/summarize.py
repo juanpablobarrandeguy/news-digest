@@ -11,7 +11,7 @@ import json
 import logging
 import re
 
-from . import config, llm
+from . import config, health, llm
 from .fetch import Article
 
 log = logging.getLogger(__name__)
@@ -34,10 +34,6 @@ SYSTEM_PROMPT_TEMPLATE = (
 )
 
 _FENCE_RE = re.compile(r"^\s*```(?:json)?|```\s*$", re.MULTILINE)
-
-
-def _model_name() -> str:
-    return config.LLM_MODEL or config.PROVIDER_DEFAULT_MODEL.get(config.LLM_PROVIDER, "")
 
 
 def _build_user_prompt(batch: list[tuple[int, Article]]) -> str:
@@ -109,10 +105,15 @@ def summarize(buckets: dict[str, list[Article]]) -> dict[str, list[Article]]:
         for start in range(0, len(group), size):
             batch = group[start : start + size]
             try:
-                results.update(_summarize_batch(batch, language))
-                log.info("summarized %d items in %s via %s", len(batch), language, config.LLM_PROVIDER)
+                got = _summarize_batch(batch, language)
+                results.update(got)
+                log.info("summarized %d/%d items in %s via %s", len(got), len(batch), language, config.LLM_PROVIDER)
+                if not got:
+                    health.warn("El resumen con IA volvió vacío para algunas notas; van con el texto del feed.")
             except Exception as exc:  # noqa: BLE001
                 log.warning("summarization failed (%s, offset %d): %s", language, start, exc)
+                health.warn(f"Falló el resumen con IA de algunas notas ({type(exc).__name__}); "
+                            "van con el texto del feed.")
 
     for idx, article in indexed:
         result = results.get(idx)

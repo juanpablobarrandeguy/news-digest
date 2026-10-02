@@ -68,8 +68,25 @@ def _section_html(key: str, articles: list[Article]) -> str:
                        cellspacing="0" border="0">{rows}</table></td></tr>"""
 
 
+def _notices_html(notices: list[str]) -> str:
+    if not notices:
+        return ""
+    items = "".join(f'<li style="margin-bottom:4px;">{_esc(n)}</li>' for n in notices)
+    return f"""
+        <tr>
+          <td style="padding-top:30px;">
+            <div style="font-family:{FONT};font-size:12px;font-weight:700;color:{MUTED};
+                        text-transform:uppercase;letter-spacing:.06em;padding-bottom:6px;">
+              Avisos
+            </div>
+            <ul style="font-family:{FONT};font-size:12px;color:{MUTED};line-height:1.5;
+                       margin:0;padding-left:18px;">{items}</ul>
+          </td>
+        </tr>"""
+
+
 def render_html(buckets: dict[str, list[Article]], now: datetime,
-                tweet_section: str = "") -> str:
+                tweet_section: str = "", notices: list[str] | None = None) -> str:
     sections = "".join(
         _section_html(key, buckets.get(key, [])) for key in config.SECTION_ORDER
     )
@@ -99,6 +116,7 @@ def render_html(buckets: dict[str, list[Article]], now: datetime,
         </tr>
         {sections}
         {tweet_section}
+        {_notices_html(notices or [])}
         <tr>
           <td style="padding-top:30px;border-top:1px solid {RULE};">
             <div style="font-family:{FONT};font-size:12px;color:{MUTED};line-height:1.5;">
@@ -113,7 +131,7 @@ def render_html(buckets: dict[str, list[Article]], now: datetime,
 
 
 def render_text(buckets: dict[str, list[Article]], now: datetime,
-                tweet_section: str = "") -> str:
+                tweet_section: str = "", notices: list[str] | None = None) -> str:
     lines = [f"DAILY DIGEST — {now.strftime('%A, %B %d, %Y')}", ""]
     for key in config.SECTION_ORDER:
         articles = buckets.get(key, [])
@@ -127,7 +145,10 @@ def render_text(buckets: dict[str, list[Article]], now: datetime,
             lines.append(article.paragraph)
             lines.append(article.url)
             lines.append("")
-    return "\n".join(lines) + tweet_section
+    footer = ""
+    if notices:
+        footer = "\n\nAVISOS\n" + "\n".join(f"- {n}" for n in notices) + "\n"
+    return "\n".join(lines) + tweet_section + footer
 
 
 def subject(buckets: dict[str, list[Article]], now: datetime) -> str:

@@ -5,7 +5,9 @@ from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from pathlib import Path
 
-from digest import config, fetch, render, state, summarize
+import json
+
+from digest import config, editor, fetch, health, render, state, summarize
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)-7s %(message)s")
 
@@ -44,6 +46,9 @@ fixtures = {
     "nacional.xml": rss("Nacional Feed", [
         ("El Gobierno anunció cambios en el esquema cambiario", "https://ex.com/n1", "Medidas anunciadas el jueves.", 5),
         ("Paro de transporte afecta el AMBA", "https://ex.com/n2", "Servicios reducidos.", 8),
+        ("El subte porteño suma frecuencias en la línea B", "https://ex.com/c1", "Anuncio del Gobierno de la Ciudad.", 4),
+        ("Belgrano le ganó a Talleres en Córdoba", "https://ex.com/n3", "Fútbol.", 6),
+        ("Se acaba el plazo para el monotributo", "https://ex.com/n4", "Vence el lunes.", 7),
     ]),
     "world.xml": rss("World Feed", [
         ("Central bank holds rates steady", "https://ex.com/w1", "Policymakers cited inflation.", 7),
@@ -83,16 +88,51 @@ ai_titles = [a.title for a in buckets["ai"]]
 assert any("Chipmaker" in t for t in ai_titles), "AI keyword promotion failed"
 assert fetch.canonical_url("https://www.ex.com/a1?utm_source=rss") == "https://ex.com/a1", "url canonicalization failed"
 
-assert len(buckets["nacional"]) == 2, "nacional section did not populate"
+assert len(buckets["nacional"]) == 4, "nacional section did not populate"
+assert [a.title for a in buckets["caba"]] == ["El subte porteño suma frecuencias en la línea B"], \
+    f"CABA keyword routing wrong: {[a.title for a in buckets['caba']]}"
 assert not any("Gobierno" in a.title for a in buckets["ai"]), "nacional item leaked into AI"
 
 html_out = render.render_html(buckets, now)
 text_out = render.render_text(buckets, now)
 assert "Read more" in html_out and "https://ex.com/w1" in text_out
-assert "Nacional" in html_out and "https://ex.com/n1" in text_out
+assert "Argentina" in html_out and "https://ex.com/n1" in text_out
+assert "CABA" in html_out and "https://ex.com/c1" in text_out
 Path("/tmp/preview.html").write_text(html_out, encoding="utf-8")
 print(f"\n  subject: {render.subject(buckets, now)}")
 print(f"  html: {len(html_out)} bytes -> /tmp/preview.html")
+
+print("\n=== editor: picks by id, rejects foreign ids, tops up short sections ===")
+pools = fetch.build_candidates(set(), per_section=10)
+world_ids, nacional_ids = [], []
+
+
+def fake_llm(system, user):
+    # ids are assigned in SECTION_ORDER; find them by headline
+    ids = {}
+    for line in user.splitlines():
+        if line.startswith("["):
+            ids[line.split("] ", 1)[1].split(": ", 1)[1].split(" — ")[0]] = int(line[1:line.index("]")])
+    return json.dumps({
+        "world": [ids["Trade talks resume after long pause"]],
+        "nacional": [ids["Paro de transporte afecta el AMBA"], ids["Trade talks resume after long pause"], 999],
+    })
+
+
+picked = editor.pick(pools, fake_llm)
+assert picked["world"][0].title == "Trade talks resume after long pause", "editor order ignored"
+assert len(picked["world"]) == 2, "editor did not top up from ranking"
+assert picked["nacional"][0].title == "Paro de transporte afecta el AMBA"
+assert all(a.category == "nacional" for a in picked["nacional"]), "editor accepted an id from another section"
+assert len(picked["ai"]) == len(pools["ai"][:5]), "section absent from the answer should fall back to ranking"
+
+health.reset()
+broken = editor.pick(pools, lambda s, u: "not json at all")
+assert sum(len(v) for v in broken.values()) > 0 and health.notices(), "editor failure should degrade with a notice"
+html_notice = render.render_html(broken, now, "", health.notices())
+assert "Avisos" in html_notice and "relevancia" in html_notice
+print(f"  ok, notice: {health.notices()[0]}")
+health.reset()
 
 state.save(state.record(seen, keys))
 

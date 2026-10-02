@@ -10,7 +10,7 @@ from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 
 import feedparser
 
-from . import config
+from . import config, health
 
 log = logging.getLogger(__name__)
 
@@ -105,6 +105,24 @@ def _looks_like_ai(article: Article) -> bool:
     return any(kw in blob for kw in config.AI_KEYWORDS)
 
 
+def _keyword_regex(keywords: list[str]) -> re.Pattern:
+    """Whole-word alternation; a trailing '*' allows any word ending."""
+    parts = []
+    for kw in keywords:
+        if kw.endswith("*"):
+            parts.append(re.escape(kw[:-1].lower()) + r"\w*")
+        else:
+            parts.append(re.escape(kw.lower()) + r"\b")
+    return re.compile(r"\b(?:" + "|".join(parts) + ")", re.IGNORECASE)
+
+
+_CABA_RE = _keyword_regex(config.CABA_KEYWORDS)
+
+
+def _looks_like_caba(article: Article) -> bool:
+    return bool(_CABA_RE.search(f"{article.title} {article.snippet}"))
+
+
 def fetch_feed(feed: dict) -> list[Article]:
     """Pull and normalize one feed. Never raises — a dead feed shouldn't kill the run."""
     articles: list[Article] = []
@@ -152,8 +170,14 @@ def fetch_feed(feed: dict) -> list[Article]:
 
 def fetch_all() -> list[Article]:
     articles: list[Article] = []
+    empty: list[str] = []
     for feed in config.FEEDS:
-        articles.extend(fetch_feed(feed))
+        items = fetch_feed(feed)
+        if not items:
+            empty.append(feed["name"])
+        articles.extend(items)
+    if empty:
+        health.warn("Feeds que hoy no trajeron nada: " + ", ".join(empty) + ".")
     return articles
 
 
@@ -179,10 +203,12 @@ def deduplicate(articles: list[Article]) -> list[Article]:
 
 
 def classify(articles: list[Article]) -> list[Article]:
-    """Promote AI-flavoured tech stories into the AI section."""
+    """Promote AI-flavoured tech stories into AI, and city stories into CABA."""
     for article in articles:
         if article.category == "tech" and _looks_like_ai(article):
             article.category = "ai"
+        elif article.category == "nacional" and _looks_like_caba(article):
+            article.category = "caba"
     return articles
 
 
@@ -196,20 +222,28 @@ def rank(articles: list[Article]) -> list[Article]:
     return sorted(articles, key=lambda a: -a.score)
 
 
-def select(articles: list[Article]) -> dict[str, list[Article]]:
-    """Bucket ranked articles into sections, respecting per-section limits."""
+def select(articles: list[Article], per_section: int | None = None) -> dict[str, list[Article]]:
+    """Bucket ranked articles into sections.
+
+    per_section=None applies the final SECTION_LIMITS. A number keeps that many
+    candidates per section instead, for the editor to choose from.
+    """
     buckets: dict[str, list[Article]] = {key: [] for key in config.SECTION_ORDER}
     for article in articles:
         bucket = buckets.get(article.category)
         if bucket is None:
             continue
-        if len(bucket) < config.SECTION_LIMITS.get(article.category, 5):
+        limit = per_section if per_section is not None else config.SECTION_LIMITS.get(article.category, 5)
+        if len(bucket) < limit:
             bucket.append(article)
     return buckets
 
 
-def build_candidates(seen_keys: set[str]) -> dict[str, list[Article]]:
-    """Full pipeline: fetch -> recency -> unseen -> dedupe -> classify -> rank -> select."""
+def build_candidates(seen_keys: set[str], per_section: int | None = None) -> dict[str, list[Article]]:
+    """Full pipeline: fetch -> recency -> unseen -> dedupe -> classify -> rank -> select.
+
+    per_section: candidates to keep per section (see select). None = final limits.
+    """
     articles = fetch_all()
     log.info("fetched %d articles total", len(articles))
 
@@ -226,7 +260,8 @@ def build_candidates(seen_keys: set[str]) -> dict[str, list[Article]]:
     articles = classify(articles)
     articles = rank(articles)
 
-    buckets = select(articles)
+    buckets = select(articles, per_section)
     for name, items in buckets.items():
-        log.info("section %s: %d stories", name, len(items))
+        log.info("section %s: %d %s", name, len(items),
+                 "candidates" if per_section is not None else "stories")
     return buckets

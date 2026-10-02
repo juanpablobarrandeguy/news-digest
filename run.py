@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build and send the daily news digest.
 
-    python run.py              # fetch, summarize, send
+    python run.py              # fetch, pick, summarize, send
     DRY_RUN=1 python run.py    # print to stdout, don't send, don't touch state
 """
 
@@ -10,7 +10,7 @@ import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from digest import config, fetch, llm, render, send, state, summarize, tweets
+from digest import config, editor, fetch, health, llm, render, send, state, summarize, tweets
 
 
 def main() -> int:
@@ -27,14 +27,22 @@ def main() -> int:
         log.warning("unknown timezone %r — falling back to UTC", config.TIMEZONE)
         now = datetime.now()
 
+    if not llm.is_enabled() and config.LLM_PROVIDER != "none":
+        health.warn("Sin clave de IA (LLM_API_KEY): notas elegidas por fecha y fuente, "
+                    "con el texto de cada feed en lugar de un resumen.")
+
     seen = state.prune(state.load())
     log.info("%d urls in the seen store", len(seen))
 
-    buckets = fetch.build_candidates(set(seen))
-    total = sum(len(v) for v in buckets.values())
-    if total == 0:
+    use_editor = config.EDITOR_ENABLED and llm.is_enabled()
+    buckets = fetch.build_candidates(set(seen), config.EDITOR_POOL if use_editor else None)
+    if sum(len(v) for v in buckets.values()) == 0:
         log.warning("nothing new to report — skipping send")
         return 0
+
+    if use_editor:
+        buckets = editor.pick(buckets, llm.call)
+    total = sum(len(v) for v in buckets.values())
 
     buckets = summarize.summarize(buckets)
 
@@ -42,12 +50,13 @@ def main() -> int:
     if config.TWEETS_ENABLED and llm.is_enabled():
         flat = [a for key in config.SECTION_ORDER for a in buckets.get(key, [])]
         angles = tweets.generate(flat, llm.call)
-        log.info("tweet angles: %d above threshold", len(angles))
+        log.info("trending angles: %d above threshold", len(angles))
         tweet_html = tweets.render_html(angles)
         tweet_text = tweets.render_text(angles)
 
-    html_body = render.render_html(buckets, now, tweet_html)
-    text_body = render.render_text(buckets, now, tweet_text)
+    notices = health.notices()
+    html_body = render.render_html(buckets, now, tweet_html, notices)
+    text_body = render.render_text(buckets, now, tweet_text, notices)
     subject = render.subject(buckets, now)
 
     send.send(subject, text_body, html_body)

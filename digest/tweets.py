@@ -1,6 +1,7 @@
-"""Pick the stories worth tweeting about and suggest entry points.
+"""Pick the stories worth posting about and suggest entry points.
 
-This does NOT write tweets. It surfaces which of today's stories have traction
+Shown in the email as "Noticias viralizables / trending": candidates for a
+LinkedIn post, the brand's Instagram or X. This does NOT write the posts. It surfaces which of today's stories have traction
 potential for your lane and what the possible angles are — you write the actual
 post. On political items it gives the factual hook and names where the
 disagreement sits, without taking a side.
@@ -33,10 +34,10 @@ class Angle:
 
 
 _SYSTEM = (
-    "You help a technical writer decide what to post about on X/Twitter. You do "
-    "NOT write the posts — you surface which stories have traction potential and "
-    "what the possible entry points are. The writer has his own opinions and "
-    "supplies the take himself.\n\n"
+    "You help a technical professional decide what to post about on LinkedIn, on "
+    "his brand's Instagram account, or on X. You do NOT write the posts — you "
+    "surface which stories have traction potential and what the possible entry "
+    "points are. He has his own opinions and supplies the take himself.\n\n"
     "For each story you select, give:\n"
     "- score (0-100): likelihood this gets engagement in his lane. Be harsh. "
     "Most stories score below 50. Reserve 80+ for something genuinely live.\n"
@@ -45,7 +46,8 @@ _SYSTEM = (
     "- angles: 2-3 distinct entry points. An angle is a framing or a question, not "
     "a finished sentence and not a hot take. Prefer angles that draw on hands-on "
     "infrastructure and cloud experience, since that is his credibility.\n"
-    "- format: one of 'one-liner', 'thread', 'quote-tweet', 'question'.\n"
+    "- format: the best fit, one of 'post LinkedIn', 'carrusel Instagram', "
+    "'reel', 'post X', 'hilo X'.\n"
     "- ttl_hours: how long this stays worth posting about.\n\n"
     "On political or contested stories: describe what happened and name what "
     "people actually disagree about. Do not supply a position, do not imply which "
@@ -116,7 +118,7 @@ def generate(articles: list, llm_call, *, lane: str = "", max_angles: int = 0,
 
     try:
         raw = llm_call(
-            _SYSTEM,
+            _SYSTEM.format(),  # the template doubles its braces
             _USER_TMPL.format(
                 lane=lane.strip(),
                 articles=_format_articles(articles),
@@ -169,10 +171,7 @@ def generate(articles: list, llm_call, *, lane: str = "", max_angles: int = 0,
 # Render
 # ---------------------------------------------------------------------------
 
-_RULES = (
-    "0-1 hashtag · link en el primer reply, nunca en el tuit · "
-    "los primeros 30 min definen el alcance · respondé más de lo que quoteás"
-)
+_RULES = "Temas y enfoques para LinkedIn, Instagram de la marca o X. El texto lo escribís vos."
 
 _INK, _MUTED, _RULE, _ACCENT = "#16181d", "#6b7280", "#e6e8ec", "#1f5eff"
 _FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
@@ -216,7 +215,7 @@ def render_html(angles: list[Angle]) -> str:
         <tr><td style="padding:34px 0 4px 0;">
           <div style="font-family:{_FONT};font-size:13px;font-weight:700;
                       letter-spacing:.12em;text-transform:uppercase;color:{_ACCENT};">
-            Para tuitear
+            {_esc(config.TRENDING_TITLE)}
           </div>
           <div style="font-family:{_FONT};font-size:12px;color:{_MUTED};padding-top:4px;">
             {_RULES}
@@ -229,7 +228,8 @@ def render_html(angles: list[Angle]) -> str:
 def render_text(angles: list[Angle]) -> str:
     if not angles:
         return ""
-    lines = ["", "PARA TUITEAR", "=" * 12, _RULES, ""]
+    title = config.TRENDING_TITLE.upper()
+    lines = ["", title, "=" * len(title), _RULES, ""]
     for angle in angles:
         lines.append(f"[{angle.score}/100 · {angle.format_hint} · vence en {angle.ttl_hours}h]")
         lines.append(angle.title)

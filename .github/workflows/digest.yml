@@ -19,14 +19,14 @@ concurrency:
 jobs:
   digest:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -35,13 +35,17 @@ jobs:
 
       - name: Build and send digest
         env:
+          # Secrets: LLM_API_KEY (Gemini), SMTP_PASS (Resend API key), MAIL_TO.
+          # Everything else has a default in digest/config.py; the repo
+          # variables below only override it when set.
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'gemini' }}
           LLM_MODEL: ${{ vars.LLM_MODEL }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-          SMTP_HOST: ${{ vars.SMTP_HOST || 'smtp.gmail.com' }}
-          SMTP_PORT: ${{ vars.SMTP_PORT || '465' }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          SMTP_USER: ${{ vars.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_FROM: ${{ vars.MAIL_FROM }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
           TWEETS_ENABLED: ${{ vars.TWEETS_ENABLED || '1' }}
           TWEET_LANE: ${{ vars.TWEET_LANE }}
