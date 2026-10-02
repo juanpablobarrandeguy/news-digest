@@ -49,6 +49,8 @@ fixtures = {
         ("El subte porteño suma frecuencias en la línea B", "https://ex.com/c1", "Anuncio del Gobierno de la Ciudad.", 4),
         ("Belgrano le ganó a Talleres en Córdoba", "https://ex.com/n3", "Fútbol.", 6),
         ("Se acaba el plazo para el monotributo", "https://ex.com/n4", "Vence el lunes.", 7),
+        ("Dólar hoy y dólar blue, EN VIVO", "https://ex.com/economia/dolar/hoy", "Minuto a minuto.", 2),
+        ("La Selección juega en el Monumental", "https://ex.com/deportes/futbol/seleccion", "Amistoso.", 3),
     ]),
     "world.xml": rss("World Feed", [
         ("Central bank holds rates steady", "https://ex.com/w1", "Policymakers cited inflation.", 7),
@@ -89,6 +91,8 @@ assert any("Chipmaker" in t for t in ai_titles), "AI keyword promotion failed"
 assert fetch.canonical_url("https://www.ex.com/a1?utm_source=rss") == "https://ex.com/a1", "url canonicalization failed"
 
 assert len(buckets["nacional"]) == 4, "nacional section did not populate"
+assert not any("Dólar hoy" in a.title or "Selección" in a.title for v in buckets.values() for a in v), \
+    "excluded topics (dólar, deportes) leaked into the digest"
 assert [a.title for a in buckets["caba"]] == ["El subte porteño suma frecuencias en la línea B"], \
     f"CABA keyword routing wrong: {[a.title for a in buckets['caba']]}"
 assert not any("Gobierno" in a.title for a in buckets["ai"]), "nacional item leaked into AI"

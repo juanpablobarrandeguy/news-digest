@@ -117,6 +117,15 @@ def _keyword_regex(keywords: list[str]) -> re.Pattern:
 
 
 _CABA_RE = _keyword_regex(config.CABA_KEYWORDS)
+_EXCLUDE_TITLE_RE = re.compile(config.EXCLUDE_TITLE_RE, re.IGNORECASE) if config.EXCLUDE_TITLE_RE else None
+
+
+def is_excluded(article: Article) -> bool:
+    """Topics the reader never wants (config.EXCLUDE_*), whatever the section."""
+    path = urlparse(article.url).path.lower()
+    if any(part in path for part in config.EXCLUDE_URL_PARTS):
+        return True
+    return bool(_EXCLUDE_TITLE_RE and _EXCLUDE_TITLE_RE.search(article.title))
 
 
 def _looks_like_caba(article: Article) -> bool:
@@ -251,6 +260,9 @@ def build_candidates(seen_keys: set[str], per_section: int | None = None) -> dic
 
     articles = filter_recent(articles, config.LOOKBACK_HOURS)
     log.info("%d within the last %dh", len(articles), config.LOOKBACK_HOURS)
+
+    articles = [a for a in articles if not is_excluded(a)]
+    log.info("%d after dropping excluded topics", len(articles))
 
     # Dedupe before consulting state, so the same winner is picked every run.
     articles = deduplicate(articles)

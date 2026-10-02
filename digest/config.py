@@ -109,7 +109,9 @@ SECTION_INTERESTS = {
     ),
     "tech": (
         "Tecnología y datos que hay que tener en el radar: infraestructura, nube, "
-        "bases de datos, ingeniería de datos y movimientos importantes de la industria."
+        "bases de datos, ingeniería de datos y movimientos importantes de la industria "
+        "tecnológica. No le interesa la industria automotriz (ventas, entregas o "
+        "modelos de autos, aunque sean eléctricos)."
     ),
     "world": (
         "Política internacional, sobre todo Estados Unidos, Ucrania/Rusia e "
@@ -144,6 +146,15 @@ AI_KEYWORDS = [
     "inference", "transformer", "diffusion model", "agentic", "copilot",
     "training run", "foundation model", "rag ", "fine-tun",
 ]
+
+# Stories dropped before ranking, in every section: sports and exchange-rate
+# coverage (2026-10-02, a pedido).
+# EXCLUDE_URL_PARTS matches the link path; EXCLUDE_TITLE_RE the headline.
+EXCLUDE_URL_PARTS = [
+    "/deportes/", "/deporte/", "/futbol/", "/sports/", "/sport/", "/football/",
+    "/economia/dolar/", "/dolar-hoy", "/dolar-blue",
+]
+EXCLUDE_TITLE_RE = r"\bd[oó]lar (hoy|blue|oficial|mep|ccl)\b|\bcotizaci[oó]n del d[oó]lar\b"
 
 # A story from a "nacional" feed matching any of these moves to the CABA section.
 # Matched as whole words, case-insensitive; a trailing "*" matches any ending
