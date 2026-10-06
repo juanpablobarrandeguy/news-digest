@@ -174,6 +174,11 @@ CABA_KEYWORDS = [
 STATE_PATH = os.getenv("STATE_PATH", "state/seen.json")
 STATE_RETENTION_DAYS = int(os.getenv("STATE_RETENTION_DAYS", "14"))
 
+# Local date (YYYY-MM-DD) of the last email sent. Several triggers fire each
+# morning (an external cron plus GitHub's own schedules as backup); whichever
+# gets there first sends, and the rest see today's date here and stop.
+LAST_SENT_PATH = os.getenv("LAST_SENT_PATH", "state/last_sent.txt")
+
 # --------------------------------------------------------------------------
 # LLM
 # --------------------------------------------------------------------------
@@ -232,3 +237,6 @@ TIMEZONE = os.getenv("TIMEZONE", "America/Argentina/Buenos_Aires")
 
 # Print the email to stdout instead of sending it.
 DRY_RUN = os.getenv("DRY_RUN", "").lower() in ("1", "true", "yes")
+
+# Send even if today's digest already went out (manual re-send).
+FORCE = os.getenv("FORCE", "").lower() in ("1", "true", "yes")

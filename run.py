@@ -27,6 +27,11 @@ def main() -> int:
         log.warning("unknown timezone %r — falling back to UTC", config.TIMEZONE)
         now = datetime.now()
 
+    today = now.date().isoformat()
+    if not config.DRY_RUN and not config.FORCE and state.last_sent() == today:
+        log.info("digest for %s already sent — nothing to do", today)
+        return 0
+
     if not llm.is_enabled() and config.LLM_PROVIDER != "none":
         health.warn("Sin clave de IA (LLM_API_KEY): notas elegidas por fecha y fuente, "
                     "con el texto de cada feed en lugar de un resumen.")
@@ -64,6 +69,7 @@ def main() -> int:
     if not config.DRY_RUN:
         keys = [k for items in buckets.values() for a in items for k in a.state_keys]
         state.save(state.record(seen, keys))
+        state.mark_sent(today)
 
     log.info("done: %d stories", total)
     return 0

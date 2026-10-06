@@ -61,3 +61,18 @@ def save(seen: dict[str, str], path: str | None = None) -> None:
         fh.write("\n")
     tmp.replace(target)
     log.info("state saved: %d urls tracked", len(seen))
+
+
+def last_sent(path: str | None = None) -> str:
+    target = Path(path or config.LAST_SENT_PATH)
+    try:
+        return target.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def mark_sent(day: str, path: str | None = None) -> None:
+    target = Path(path or config.LAST_SENT_PATH)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(day + "\n", encoding="utf-8")
+    log.info("marked %s as sent", day)

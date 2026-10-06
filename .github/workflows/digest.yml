@@ -1,14 +1,24 @@
 name: Daily News Digest
 
 on:
+  # Main trigger: an external cron (cron-job.org) calls workflow_dispatch at
+  # 07:45 Buenos Aires. GitHub's own scheduler is best-effort: it runs hours
+  # late under load and sometimes skips a day, so these are only backups.
+  # Whichever run gets there first sends; the rest find today's date in
+  # state/last_sent.txt and stop before doing any work.
+  # Times in UTC (Buenos Aires is UTC-3, no DST).
   schedule:
-    # 10:50 UTC = 07:50 in Buenos Aires (UTC-3, no DST).
-    # Deliberately 10 minutes early: GitHub's scheduler runs late under load.
-    - cron: "50 10 * * *"
+    - cron: "50 10 * * *"   # 07:50
+    - cron: "20 11 * * *"   # 08:20
+    - cron: "50 12 * * *"   # 09:50
   workflow_dispatch:
     inputs:
       dry_run:
         description: "Print the digest instead of emailing it"
+        type: boolean
+        default: false
+      force:
+        description: "Send even if today's digest already went out"
         type: boolean
         default: false
 
@@ -24,7 +34,12 @@ jobs:
       contents: write
 
     steps:
+      # Check out the branch head, not the commit that was current when the
+      # run was queued: a run waiting behind another must see the state the
+      # first one just pushed, or the already-sent guard can't work.
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
 
       - uses: actions/setup-python@v6
         with:
@@ -51,17 +66,18 @@ jobs:
           TWEET_LANE: ${{ vars.TWEET_LANE }}
           TIMEZONE: America/Argentina/Buenos_Aires
           DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+          FORCE: ${{ inputs.force && '1' || '' }}
         run: python run.py
 
       - name: Persist seen-URL state
         if: ${{ !inputs.dry_run }}
         run: |
-          if [[ -z "$(git status --porcelain state/seen.json)" ]]; then
+          if [[ -z "$(git status --porcelain state/)" ]]; then
             echo "state unchanged, nothing to commit"
             exit 0
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add state/seen.json
+          git add state/
           git commit -m "chore: update seen state [skip ci]"
           git push
